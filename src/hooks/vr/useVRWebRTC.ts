@@ -62,6 +62,17 @@ export function useVRWebRTC(roomId: string | null) {
             socket.emit("signal", { roomId, targetId: socketId, signal, senderId: socket.id });
           });
 
+          peer.on("data", (data: string) => {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.type === "tracking") {
+                updateParticipantTracking(parsed.userId, parsed.trackingData);
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          });
+
           peer.on("stream", (remoteStream: any) => {
             console.log("Received remote stream for", remoteUserId);
             if (remoteStream.getVideoTracks().length > 0) {
@@ -93,6 +104,17 @@ export function useVRWebRTC(roomId: string | null) {
 
             peer.on("signal", (signal: any) => {
               socket.emit("signal", { roomId, targetId: senderId, signal, senderId: socket.id });
+            });
+
+            peer.on("data", (data: string) => {
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.type === "tracking") {
+                  updateParticipantTracking(parsed.userId, parsed.trackingData);
+                }
+              } catch (e) {
+                // Ignore parse errors
+              }
             });
 
             peer.on("stream", (remoteStream: any) => {
@@ -148,9 +170,17 @@ export function useVRWebRTC(roomId: string | null) {
   }, [roomId, userId, userName, selectedAvatar]);
 
   const sendTrackingUpdate = (trackingData: VRTrackingData) => {
-    if (socketRef.current && roomId) {
-      socketRef.current.emit("tracking-update", { roomId, userId, trackingData });
-    }
+    // Send over low-latency WebRTC Data Channels instead of WebSockets
+    const message = JSON.stringify({ type: "tracking", userId, trackingData });
+    Object.values(peersRef.current).forEach((peer) => {
+      try {
+        if (peer.connected) {
+          peer.send(message);
+        }
+      } catch (e) {
+        // Peer might be disconnected
+      }
+    });
   };
 
   const toggleScreenShare = async () => {

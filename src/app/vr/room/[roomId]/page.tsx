@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useVRStore } from "@/store/vr/useVRStore";
 import { useVRWebRTC } from "@/hooks/vr/useVRWebRTC";
@@ -12,7 +12,7 @@ import VRControls from "@/components/vr/VRControls";
 import VRChair from "@/components/vr/VRChair";
 import VRScreen from "@/components/vr/VRScreen";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Text, Billboard } from "@react-three/drei";
+import { Text, Billboard, DeviceOrientationControls } from "@react-three/drei";
 import * as THREE from "three";
 import { v4 as uuidv4 } from "uuid";
 
@@ -35,6 +35,11 @@ export default function VRRoomPage() {
   const { localStream, remoteScreenStream, sendTrackingUpdate, toggleScreenShare } = useVRWebRTC(roomId);
   const { orientation, requestPermission, hasPermission } = useGyroscope();
   const mouthOpen = useAudioLevel(localStream);
+
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
   // Generate random user ID if missing
   useEffect(() => {
@@ -80,7 +85,12 @@ export default function VRRoomPage() {
       )}
 
       <VRScene>
-        <CameraController orientation={orientation} sendTrackingUpdate={sendTrackingUpdate} mouthOpen={mouthOpen} />
+        {isMobile && hasPermission ? (
+          <DeviceOrientationControls />
+        ) : (
+          <CameraController />
+        )}
+        <TrackingBroadcaster sendTrackingUpdate={sendTrackingUpdate} mouthOpen={mouthOpen} />
 
         {/* Screen Share Display */}
         {isSharingScreen && remoteScreenStream && (
@@ -139,21 +149,17 @@ export default function VRRoomPage() {
         })}
       </VRScene>
 
-      <VRControls onLeave={handleLeave} onRecenter={handleRecenter} onToggleScreenShare={toggleScreenShare} />
+      <VRControls 
+        onLeave={handleLeave} 
+        onRecenter={handleRecenter} 
+        onToggleScreenShare={isMobile ? undefined : toggleScreenShare} 
+      />
     </div>
   );
 }
 
-// Helper component to control camera from gyro in R3F context
-function CameraController({
-  orientation,
-  sendTrackingUpdate,
-  mouthOpen
-}: {
-  orientation: { alpha: number; beta: number; gamma: number };
-  sendTrackingUpdate: (data: any) => void;
-  mouthOpen: number;
-}) {
+// Desktop fallback camera control (mouse drag)
+function CameraController() {
   const { camera, gl } = useThree();
   const isDragging = useRef(false);
   const previousMousePosition = useRef({ x: 0, y: 0 });
@@ -191,21 +197,17 @@ function CameraController({
     };
   }, [camera, gl]);
 
-  useFrame(() => {
-    // Only apply gyro if it's actually providing values (non-zero)
-    if (orientation.alpha !== 0 || orientation.beta !== 0 || orientation.gamma !== 0) {
-      const euler = new THREE.Euler(
-        THREE.MathUtils.degToRad(orientation.beta),
-        THREE.MathUtils.degToRad(orientation.alpha),
-        THREE.MathUtils.degToRad(orientation.gamma),
-        "YXZ"
-      );
-      camera.quaternion.setFromEuler(euler);
-    }
+  return null;
+}
 
-    // Send camera rotation to server (covers both gyro and mouse drag)
+// Broadcaster to send local camera rotation and mouth state to peers
+function TrackingBroadcaster({ sendTrackingUpdate, mouthOpen }: { sendTrackingUpdate: (data: any) => void, mouthOpen: number }) {
+  const { camera } = useThree();
+  const lastUpdateRef = useRef(0);
+
+  useFrame(() => {
     const now = Date.now();
-    if (now - lastUpdateRef.current > 100) { // 10fps
+    if (now - lastUpdateRef.current > 33) { // ~30fps
       sendTrackingUpdate({
         headRotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z],
         mouthOpen: mouthOpen,
