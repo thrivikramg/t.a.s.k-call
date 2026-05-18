@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useVRStore } from "@/store/vr/useVRStore";
 import Scene from "@/components/ar/Scene";
@@ -13,7 +13,7 @@ const AVATARS = [
   { id: "3", name: "Future Mech", path: "/avatar3.glb" },
 ];
 
-export default function VRSelectAvatar() {
+function SelectAvatarContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room");
@@ -104,5 +104,13 @@ export default function VRSelectAvatar() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function VRSelectAvatar() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>}>
+      <SelectAvatarContent />
+    </Suspense>
   );
 }
