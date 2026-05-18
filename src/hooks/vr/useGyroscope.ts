@@ -26,9 +26,10 @@ export function useGyroscope() {
   }, []);
 
   useEffect(() => {
-    // Check if we can automatically enable on non-iOS
-    // @ts-ignore
-    if (typeof DeviceOrientationEvent.requestPermission !== "function") {
+    // Only auto-enable on Desktop devices. Mobile devices (iOS & Android) MUST require a user gesture 
+    // to unlock sensors and WebRTC audio, otherwise the DeviceOrientationControls may receive NaN and crash the Canvas.
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) {
       setHasPermission(true);
     }
   }, []);
